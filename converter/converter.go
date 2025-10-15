@@ -21,14 +21,14 @@ type compiledRegexes struct {
 }
 
 type Converter struct {
-	system  UnitSystem
 	unitMap map[string]Unit
 	regexes compiledRegexes
 }
 
 type parsedComponent struct {
-	Value float64
-	Unit  Unit
+	Value    float64
+	Unit     Unit
+	Operator string
 }
 
 var textNumberMap = map[string]string{
@@ -36,28 +36,18 @@ var textNumberMap = map[string]string{
 	"six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10", "half": "0.5",
 }
 
-func NewConverter(system UnitSystem) *Converter {
-	aliasMap := make(map[string]Unit)
-	for _, unit := range system.Units {
-		for _, alias := range unit.Aliases {
-			aliasMap[strings.ToLower(alias)] = unit
-		}
-		aliasMap[strings.ToLower(unit.Name)] = unit
-		aliasMap[strings.ToLower(unit.Symbol)] = unit
-	}
-
+func NewConverter(unitMap map[string]Unit) *Converter {
 	numberRegexPart := `((?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)`
-	unitRegexPart := `([a-z][a-z0-9^³²]*)`
+	unitRegexPart := `([a-z][a-z0-9^³²\/]*)`
 
 	regexes := compiledRegexes{
-		targetUnit: regexp.MustCompile(`\s+in\s+([a-z0-9\s^³²]+)$`),
-		component: regexp.MustCompile(fmt.Sprintf(`\s*([+-])?\s*%s?\s*%s`, numberRegexPart, unitRegexPart)),
-		fraction: regexp.MustCompile(`(\d+)\s*/\s*(\d+)`),
+		targetUnit: regexp.MustCompile(`\s+(?:in|to)\s+([a-z0-9\s^³²\/]+)$`),
+		component:  regexp.MustCompile(fmt.Sprintf(`\s*([+\-*\/])?\s*%s?\s*%s`, numberRegexPart, unitRegexPart)),
+		fraction:   regexp.MustCompile(`(\d+)\s*/\s*(\d+)`),
 	}
 
 	return &Converter{
-		system:  system,
-		unitMap: aliasMap,
+		unitMap: unitMap,
 		regexes: regexes,
 	}
 }
@@ -65,15 +55,20 @@ func NewConverter(system UnitSystem) *Converter {
 func (c *Converter) preprocessInput(input string) string {
 	clean := strings.ToLower(input)
 
+	// Remove "convert" prefix if present
+	clean = regexp.MustCompile(`^\s*convert\s+`).ReplaceAllString(clean, "")
+
 	for word, numStr := range textNumberMap {
 		re := regexp.MustCompile(`\b` + word + `\b`)
 		clean = re.ReplaceAllString(clean, numStr)
 	}
 
+	clean = strings.ReplaceAll(clean, " and ", " + ")
+
 	clean = c.regexes.fraction.ReplaceAllStringFunc(clean, func(m string) string {
 		parts := c.regexes.fraction.FindStringSubmatch(m)
 		if len(parts) < 3 {
-			return m 
+			return m
 		}
 		num, _ := strconv.ParseFloat(parts[1], 64)
 		den, _ := strconv.ParseFloat(parts[2], 64)
@@ -135,7 +130,17 @@ func (c *Converter) Process(input string) (*Result, error) {
 			value = -value
 		}
 
-		components = append(components, parsedComponent{Value: value, Unit: unit})
+		// Initial component is additive
+		if len(components) == 0 && signStr == "" {
+			signStr = "+"
+		}
+
+		// Subsequent components are additive if no sign is specified
+		if len(components) > 0 && signStr == "" {
+			signStr = "+"
+		}
+
+		components = append(components, parsedComponent{Value: value, Unit: unit, Operator: signStr})
 		lastParsedUnit = unit
 	}
 
@@ -148,10 +153,23 @@ func (c *Converter) Process(input string) (*Result, error) {
 
 	totalInBase := 0.0
 	for _, comp := range components {
-		totalInBase += comp.Value * comp.Unit.ToBase
+		valInBase := comp.Unit.ToBaseFunc(comp.Value)
+		switch comp.Operator {
+		case "+":
+			totalInBase += valInBase
+		case "-":
+			totalInBase -= valInBase
+		case "*":
+			totalInBase *= valInBase
+		case "/":
+			if valInBase == 0 {
+				return nil, fmt.Errorf("division by zero")
+			}
+			totalInBase /= valInBase
+		}
 	}
 
-	finalValue := totalInBase / targetUnit.ToBase
+	finalValue := targetUnit.FromBaseFunc(totalInBase)
 
 	return &Result{
 		Value:      finalValue,
@@ -161,8 +179,28 @@ func (c *Converter) Process(input string) (*Result, error) {
 }
 
 func (c *Converter) findUnit(s string) (Unit, bool) {
+	s = strings.TrimSpace(s)
 	unit, ok := c.unitMap[strings.ToLower(s)]
-	return unit, ok
+	if ok {
+		return unit, true
+	}
+
+	// Handle compound units like "m/s"
+	parts := strings.Split(s, "/")
+	if len(parts) == 2 {
+		numerator, ok1 := c.findUnit(parts[0])
+		denominator, ok2 := c.findUnit(parts[1])
+		if ok1 && ok2 {
+			return Unit{
+				Name:         fmt.Sprintf("%s per %s", numerator.Name, denominator.Name),
+				Symbol:       fmt.Sprintf("%s/%s", numerator.Symbol, denominator.Symbol),
+				ToBaseFunc:   func(val float64) float64 { return numerator.ToBaseFunc(val) / denominator.ToBaseFunc(1) },
+				FromBaseFunc: func(val float64) float64 { return numerator.FromBaseFunc(val) * denominator.ToBaseFunc(1) },
+			}, true
+		}
+	}
+
+	return Unit{}, false
 }
 
 func (c *Converter) createNotFoundError(unknownUnit string) error {
