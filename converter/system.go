@@ -357,6 +357,27 @@ func NewTimeSystem() UnitSystem {
 		Name:     "Time",
 		BaseUnit: "Seconds",
 		Units: map[string]Unit{
+			"Nanoseconds": {
+				Name:         "Nanoseconds",
+				Symbol:       "ns",
+				Aliases:      []string{"ns", "nanosecond", "nanoseconds"},
+				ToBaseFunc:   func(val float64) float64 { return val / 1e9 },
+				FromBaseFunc: func(val float64) float64 { return val * 1e9 },
+			},
+			"Microseconds": {
+				Name:         "Microseconds",
+				Symbol:       "µs",
+				Aliases:      []string{"us", "microsecond", "microseconds"},
+				ToBaseFunc:   func(val float64) float64 { return val / 1e6 },
+				FromBaseFunc: func(val float64) float64 { return val * 1e6 },
+			},
+			"Milliseconds": {
+				Name:         "Milliseconds",
+				Symbol:       "ms",
+				Aliases:      []string{"ms", "millisecond", "milliseconds"},
+				ToBaseFunc:   func(val float64) float64 { return val / 1e3 },
+				FromBaseFunc: func(val float64) float64 { return val * 1e3 },
+			},
 			"Seconds": {
 				Name:         "Seconds",
 				Symbol:       "s",
@@ -385,12 +406,33 @@ func NewTimeSystem() UnitSystem {
 				ToBaseFunc:   func(val float64) float64 { return val * 86400 },
 				FromBaseFunc: func(val float64) float64 { return val / 86400 },
 			},
+			"Weeks": {
+				Name:         "Weeks",
+				Symbol:       "wk",
+				Aliases:      []string{"wk", "week", "weeks"},
+				ToBaseFunc:   func(val float64) float64 { return val * 604800 },
+				FromBaseFunc: func(val float64) float64 { return val / 604800 },
+			},
+			"Months": {
+				Name:         "Months",
+				Symbol:       "mo",
+				Aliases:      []string{"mo", "month", "months"},
+				ToBaseFunc:   func(val float64) float64 { return val * 2629728 },
+				FromBaseFunc: func(val float64) float64 { return val / 2629728 },
+			},
 			"Years": {
 				Name:         "Years",
 				Symbol:       "yr",
 				Aliases:      []string{"y", "yr", "year", "years"},
-				ToBaseFunc:   func(val float64) float64 { return val * 31536000 },
-				FromBaseFunc: func(val float64) float64 { return val / 31536000 },
+				ToBaseFunc:   func(val float64) float64 { return val * 31557600 },
+				FromBaseFunc: func(val float64) float64 { return val / 31557600 },
+			},
+			"Decades": {
+				Name:         "Decades",
+				Symbol:       "dec",
+				Aliases:      []string{"dec", "decade", "decades"},
+				ToBaseFunc:   func(val float64) float64 { return val * 315576000 },
+				FromBaseFunc: func(val float64) float64 { return val / 315576000 },
 			},
 		},
 	}
